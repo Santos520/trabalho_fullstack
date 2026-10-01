@@ -1,0 +1,9 @@
+{
+  "outputDirectory": "public",
+  "rewrites": [
+    {
+      "source": "/api/:path*",
+      "destination": "https://trabalho-fullstack-3exr.onrender.com/api/:path*"
+    }
+  ]
+}

@@ -6,12 +6,20 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "test": "node --test"
+    "test": "node --test",
+    "swagger": "node swagger.js"
   },
   "dependencies": {
     "@neon/config": "^1.8.3",
     "@neon/env": "^1.4.8",
+    "cloudinary": "^2.11.0",
     "dotenv": "^18.0.4",
-    "pg": "^8.23.0"
+    "multer": "^2.5.0",
+    "pg": "^8.23.0",
+    "swagger-ui-dist": "^5.34.0"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "^13.1.0",
+    "swagger-autogen": "^2.23.7"
   }
 }

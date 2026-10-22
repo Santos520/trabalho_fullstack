@@ -41,7 +41,7 @@ before(async () => {
   baseUrl = `http://127.0.0.1:${port}`;
   processServer = spawn(process.execPath, ['server.js'], {
     cwd: path.resolve(__dirname, '..'),
-    env: { ...process.env, PORT: String(port), DATA_FILE: path.join(tempDir, 'data.json'), OPENAI_API_KEY: '', DISABLE_REMOTE_COVERS: '1' },
+    env: { ...process.env, PORT: String(port), DATA_FILE: path.join(tempDir, 'data.json'), OPENAI_API_KEY: '', DISABLE_REMOTE_COVERS: '1', CLOUDINARY_CLOUD_NAME: '', CLOUDINARY_API_KEY: '', CLOUDINARY_API_SECRET: '' },
     stdio: ['ignore', 'pipe', 'pipe']
   });
 
@@ -237,5 +237,78 @@ test('busca Steam valida consulta e importação exige perfil admin', async () =
   assert.equal((await request(`catalog/steam?q=${'a'.repeat(81)}`)).status, 400);
   assert.equal((await request('catalog/steam/import', { method: 'POST', token: clientToken, body: { appId: '440' } })).status, 401);
   assert.equal((await request('catalog/steam/import', { method: 'POST', token: adminToken, body: { appId: 'inválido' } })).status, 400);
+});
+
+test('Swagger UI e OpenAPI documentam os contratos reais sem depender de CDN', async () => {
+  const page = await fetch(`${baseUrl}/docs`);
+  assert.equal(page.status, 200);
+  const html = await page.text();
+  assert.match(html, /swagger-ui/);
+  for (const asset of ['swagger-ui.css', 'swagger-ui-bundle.js', 'swagger-ui-standalone-preset.js', 'swagger-init.js']) {
+    const response = await fetch(`${baseUrl}/docs/${asset}?v=1`);
+    assert.equal(response.status, 200, asset);
+    assert.ok((await response.text()).length > 0);
+  }
+  assert.equal((await fetch(`${baseUrl}/docs/server.js`)).status, 404);
+  const response = await fetch(`${baseUrl}/docs/openapi.json`);
+  assert.equal(response.status, 200);
+  const spec = await response.json();
+  await require('@apidevtools/swagger-parser').validate(spec);
+  assert.equal(spec.openapi, '3.0.0');
+  assert.equal(spec.servers[0].url, '/');
+  const expected = {
+    '/api/auth': ['post'], '/api/games': ['get', 'post'], '/api/games/{id}': ['put', 'delete'],
+    '/api/catalog/steam': ['get'], '/api/catalog/steam/import': ['post'], '/api/dashboard': ['get'],
+    '/api/me': ['get'], '/api/bookings': ['get', 'post'], '/api/bookings/{id}': ['patch', 'delete'],
+    '/api/reviews': ['get', 'post'], '/api/reviews/{id}': ['patch'], '/api/ai': ['post']
+  };
+  for (const [route, methods] of Object.entries(expected)) {
+    for (const method of methods) assert.ok(spec.paths[route]?.[method], `${method} ${route}`);
+  }
+  assert.equal(spec.components.securitySchemes.bearerAuth.scheme, 'bearer');
+  assert.equal(spec.components.securitySchemes.bearerAuth.bearerFormat, undefined);
+  assert.deepEqual(spec.paths['/api/games'].post.security, [{ bearerAuth: [] }]);
+  assert.deepEqual(spec.paths['/api/games'].get.security, []);
+  assert.equal((await fetch(`${baseUrl}/`)).status, 200);
+});
+
+test('upload de capas valida autenticação, entidade, multipart e configuração', async () => {
+  const selected = (await request('games?q=Hades')).data[0];
+  const route = `games/${selected.id}/cover`;
+  const png = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aX1sAAAAASUVORK5CYII=', 'base64');
+  const send = async (form, { token = adminToken, target = route, headers = {} } = {}) => {
+    const res = await fetch(`${baseUrl}/api/${target}`, { method: 'POST', headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}), ...headers }, body: form, signal: AbortSignal.timeout(3000) });
+    return { status: res.status, data: await res.json() };
+  };
+  const form = (bytes = png, type = 'image/png', field = 'imagem') => {
+    const data = new FormData();
+    data.append(field, new Blob([bytes], { type }), 'capa.png');
+    return data;
+  };
+  assert.equal((await send(form(), { token: '' })).status, 401);
+  assert.equal((await send(form(), { token: clientToken })).status, 401);
+  assert.equal((await send(form(), { target: 'games/inexistente/cover' })).status, 404);
+  assert.equal((await send('{}', { headers: { 'Content-Type': 'application/json' } })).status, 415);
+  const empty = new FormData(); empty.append('imagem', 'sem arquivo');
+  assert.equal((await send(empty)).status, 400);
+  assert.equal((await send(form(Buffer.from('texto'), 'text/plain'))).status, 415);
+  assert.equal((await send(form(Buffer.from('texto'), 'image/png'))).status, 415);
+  assert.equal((await send(form(png, 'image/jpeg'))).status, 415);
+  assert.equal((await send(form(png, 'image/png', 'arquivo'))).status, 400);
+  const extra = form(); extra.append('folder', 'arbitraria');
+  assert.equal((await send(extra)).status, 400);
+  const two = form(); two.append('imagem', new Blob([png], { type: 'image/png' }), 'outra.png');
+  assert.equal((await send(two)).status, 400);
+  assert.equal((await send(form(Buffer.alloc(5 * 1024 * 1024 + 1)))).status, 413);
+  assert.equal((await send('--boundary\r\nContent-Disposition: form-data; name="imagem"; filename="a.png"\r\nContent-Type: image/png\r\n\r\n', { headers: { 'Content-Type': 'multipart/form-data; boundary=boundary' } })).status, 400);
+  const unavailable = await send(form());
+  assert.equal(unavailable.status, 503);
+  assert.equal((await send(form(), { target: `games//${selected.id}//cover//` })).status, 503);
+  assert.doesNotMatch(JSON.stringify(unavailable.data), /api_secret|stack|Error:/);
+  assert.equal((await request('games?q=Hades')).data[0].cover, selected.cover);
+  const spec = await (await fetch(`${baseUrl}/docs/openapi.json`)).json();
+  const upload = spec.paths['/api/games/{id}/cover'].post;
+  assert.equal(upload.requestBody.content['multipart/form-data'].schema.properties.imagem.format, 'binary');
+  assert.deepEqual(upload.security, [{ bearerAuth: [] }]);
 });
 

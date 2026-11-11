@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>GameVault | Sua Biblioteca de Jogos</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Fraunces:opsz,wght@9..144,500;9..144,600&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/styles.css" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js" defer></script>
+</head>
+<body>
+  <header class="topbar"><a class="brand" href="#inicio" aria-label="GameVault, início"><span class="brand-mark">G</span><span>GameVault<span class="brand-dot">.</span></span></a><nav aria-label="Navegação principal"><a href="#jogos">Explorar jogos</a><a href="#curadoria">Recomendação</a><button class="btn btn-dark" id="accountBtn">Entrar</button></nav></header>
+  <main>
+    <section class="hero" id="inicio"><div class="hero-copy"><p class="eyebrow">ESCOLHA. JOGUE. REPITA.</p><h1>Uma boa partida<br>começa <em>aqui.</em></h1><p class="hero-text">Encontre seu próximo jogo favorito sem complicação. Tem aventura para cada humor e companhia.</p><a class="btn btn-coral" href="#jogos">Explorar jogos <span>↗</span></a><p class="hero-note"><span>✦</span> Catálogo selecionado para você descobrir algo novo</p></div><div class="hero-art hero-carousel" id="heroCarousel" tabindex="0" aria-label="Jogos em destaque"><img class="hero-cover" id="heroCarouselImage" src="https://cdn.cloudflare.steamstatic.com/steam/apps/1145360/header.jpg" alt="Arte de Hades"><div class="hero-art-shade"></div><div class="hero-grid"></div><div class="carousel-topline"><span class="carousel-label"><i>✦</i> DESTAQUES DO CATÁLOGO</span><span class="carousel-count" id="heroCarouselCount">01 / 06</span></div><div class="carousel-copy"><p class="carousel-meta" id="heroCarouselMeta">2020 · Ação · PC / Console</p><h2 id="heroCarouselTitle">Hades</h2><p id="heroCarouselDescription">Escape do submundo em uma aventura cheia de ação.</p><a class="carousel-link" id="heroCarouselLink" href="#jogos">Ver no catálogo <span>↗</span></a></div><div class="carousel-footer"><div class="carousel-dots" id="heroCarouselDots" aria-label="Escolher jogo em destaque"></div><div class="carousel-controls"><button type="button" id="heroCarouselPrevious" aria-label="Jogo anterior">←</button><button type="button" id="heroCarouselNext" aria-label="Próximo jogo">→</button></div></div></div></section>
+    <section class="signal" aria-label="Como funciona"><p><strong>01</strong> descubra um jogo</p><p><strong>02</strong> peça emprestado</p><p><strong>03</strong> aproveite a partida</p></section>
+    <section class="experiences" id="jogos"><div class="section-heading"><div><p class="eyebrow">CATÁLOGO</p><h2>O que dá vontade<br>de <em>jogar hoje?</em></h2></div><p class="section-intro">Explore uma seleção de jogos para PC e consoles. Busque por título, estilo ou plataforma.</p></div><div class="filters"><label class="search"><span aria-hidden="true">⌕</span><input id="searchInput" placeholder="Buscar jogo, gênero ou plataforma" aria-label="Buscar jogo, gênero ou plataforma" /></label><button class="filter-btn active" data-filter="all">Todos</button><button class="filter-btn" data-filter="featured">Em destaque <span>✦</span></button></div><div class="experience-grid" id="experienceGrid" aria-live="polite"></div></section>
+    <section class="ai-band" id="curadoria"><div class="ai-symbol" aria-hidden="true">✦</div><div><p class="eyebrow">UMA AJUDA PARA ESCOLHER</p><h2>Qual é o seu<br><em>clima hoje?</em></h2></div><div><p>Conte o que está com vontade de jogar e receba sugestões do nosso catálogo.</p><form class="ai-form" id="aiForm"><input name="mood" placeholder="Ex.: curto, cooperativo e sem terror" aria-label="Descreva o que quer jogar" required><button class="btn btn-dark">Me sugira um jogo <span>↗</span></button></form><div id="aiResult" aria-live="polite"></div></div></section>
+  </main>
+  <footer><span class="footer-brand">GameVault<span class="brand-dot">.</span></span><span>Encontre tempo para jogar.</span><span>© 2026 GameVault</span></footer>
+  <div class="modal hidden" id="modal"><div class="modal-box"><button class="modal-close" id="closeModal">×</button><div id="modalContent"></div></div></div>
+  <script src="/app.js"></script>
+</body>
+</html>

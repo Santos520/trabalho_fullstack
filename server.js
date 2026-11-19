@@ -4,6 +4,8 @@ const http = require('http');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { serveDocs } = require('./api-docs');
+const { UploadError, receiveImage, createCloudinaryService, createCoverUpdater, createStateWriter } = require('./image-upload');
 
 const PORT = process.env.PORT || 3000;
 const publicDir = path.join(__dirname, 'public');
@@ -99,9 +101,9 @@ async function wikipediaCoverFor(title) {
 }
 
 async function resolveCover(game) {
+  if (validImageUrl(game.cover)) return game.cover;
   const canonical = coverFor(game.title);
   if (canonical) return canonical;
-  if (validImageUrl(game.cover)) return game.cover;
   if (process.env.DISABLE_REMOTE_COVERS === '1') return '';
   const key = normalizedCoverTitle(game.title);
   const cached = resolvedCoverCache.get(key);
@@ -317,9 +319,15 @@ const reviews = [
 
 function currentState() { return { games, clients, bookings, reviews, admins }; }
 
-async function save() {
-  if (database) return database.saveState(currentState());
-  try { fs.writeFileSync(DATA_FILE, JSON.stringify(currentState(), null, 2)); } catch (error) { console.error('Nao foi possivel salvar data.json:', error.message); }
+async function save(state = currentState()) {
+  if (database) return database.saveState(state);
+  const temporary = `${DATA_FILE}.${ids()}.tmp`;
+  try {
+    fs.writeFileSync(temporary, JSON.stringify(state, null, 2), { flag: 'wx' });
+    fs.renameSync(temporary, DATA_FILE);
+  } finally {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+  }
 }
 
 function loadJson() {
@@ -400,6 +408,9 @@ function cleanGame(data, current = {}) {
 function json(res, status, body) { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', 'Access-Control-Allow-Origin': '*' }); res.end(JSON.stringify(body)); }
 function body(req) { return new Promise((resolve, reject) => { let data = ''; req.on('data', chunk => data += chunk); req.on('end', () => { try { resolve(data ? JSON.parse(data) : {}); } catch { reject(new Error('JSON invalido')); } }); }); }
 function findGame(id) { return games.find(item => item.id === id); }
+const images = createCloudinaryService();
+const withStateWrite = createStateWriter();
+const updateCover = createCoverUpdater({ findGame, currentState, save, images, withStateWrite });
 function staticFile(req, res) {
   const requested = req.url === '/' ? 'index.html' : req.url.replace(/^\//, '');
   const file = path.join(publicDir, requested);
@@ -417,12 +428,34 @@ async function api(req, res) {
   const need = role => { if (!user || (role && user.role !== role)) { json(res, 401, { error: 'Acesso nao autorizado. Entre novamente.' }); return false; } return true; };
   try {
     if (req.method === 'OPTIONS') { res.writeHead(204, { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'Content-Type, Authorization', 'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS' }); return res.end(); }
+    /* #swagger.start
+       #swagger.path = '/api/games/{id}/cover'
+       #swagger.method = 'post'
+       #swagger.end */
+    if (req.method === 'POST' && parts[1] === 'games' && parts[2] && parts[3] === 'cover' && parts.length === 4) {
+      if (!need('admin')) return;
+      if (!findGame(parts[2])) return json(res, 404, { error: 'Jogo não encontrado.' });
+      try {
+        const buffer = await receiveImage(req, res);
+        return json(res, 201, await updateCover(parts[2], buffer));
+      } catch (error) {
+        return json(res, error instanceof UploadError ? error.status : 500, { error: error instanceof UploadError ? error.message : 'Não foi possível salvar a capa. Tente novamente.' });
+      }
+    }
+    /* #swagger.start
+       #swagger.path = '/api/games'
+       #swagger.method = 'get'
+       #swagger.end */
     if (req.method === 'GET' && parts[1] === 'games') {
       const query = (url.searchParams.get('q') || '').toLowerCase();
       const featured = url.searchParams.get('featured') === 'true';
       const filtered = games.filter(item => (!query || `${item.title} ${item.category} ${item.platform}`.toLowerCase().includes(query)) && (!featured || item.featured));
       return json(res, 200, await gamesWithCovers(filtered));
     }
+    /* #swagger.start
+       #swagger.path = '/api/catalog/steam'
+       #swagger.method = 'get'
+       #swagger.end */
     if (req.method === 'GET' && parts[1] === 'catalog' && parts[2] === 'steam' && !parts[3]) {
       const query = (url.searchParams.get('q') || '').trim();
       if (query.length < 2) return json(res, 400, { error: 'Digite pelo menos 2 caracteres para buscar jogos' });
@@ -447,6 +480,10 @@ async function api(req, res) {
         return json(res, 502, { error: 'Não foi possível consultar a Steam agora. Tente novamente mais tarde.' });
       }
     }
+    /* #swagger.start
+       #swagger.path = '/api/catalog/steam/import'
+       #swagger.method = 'post'
+       #swagger.end */
     if (req.method === 'POST' && parts[1] === 'catalog' && parts[2] === 'steam' && parts[3] === 'import') {
       if (!need('admin')) return;
       const data = await body(req);
@@ -498,6 +535,10 @@ async function api(req, res) {
         return json(res, 502, { error: 'Não foi possível importar este jogo agora. Tente novamente mais tarde.' });
       }
     }
+    /* #swagger.start
+       #swagger.path = '/api/dashboard'
+       #swagger.method = 'get'
+       #swagger.end */
     if (req.method === 'GET' && parts[1] === 'dashboard') {
       if (!need('admin')) return;
       const gameStats = games.map(game => ({
@@ -524,11 +565,19 @@ async function api(req, res) {
         recent: bookings.map(booking => ({ ...booking, client: clients.find(c => c.id === booking.clientId)?.name, game: findGame(booking.gameId)?.title })) 
       });
     }
+    /* #swagger.start
+       #swagger.path = '/api/me'
+       #swagger.method = 'get'
+       #swagger.end */
     if (req.method === 'GET' && parts[1] === 'me') {
       const client = clients.find(item => item.id === user?.id);
       if (!client) return json(res, 401, { error: 'Cliente nao encontrado' });
       return json(res, 200, { client: { id: client.id, name: client.name, email: client.email }, bookings: bookings.filter(item => item.clientId === client.id).map(item => ({ ...item, game: findGame(item.gameId)?.title })), reviews: reviews.filter(item => item.clientId === client.id).map(item => ({ ...item, game: findGame(item.gameId)?.title })) });
     }
+    /* #swagger.start
+       #swagger.path = '/api/bookings'
+       #swagger.method = 'get'
+       #swagger.end */
     if (req.method === 'GET' && parts[1] === 'bookings') {
       if (!need('admin')) return;
       const status = url.searchParams.get('status');
@@ -540,6 +589,10 @@ async function api(req, res) {
       }));
       return json(res, 200, list);
     }
+    /* #swagger.start
+       #swagger.path = '/api/auth'
+       #swagger.method = 'post'
+       #swagger.end */
     if (req.method === 'POST' && parts[1] === 'auth') {
       const data = await body(req);
       const email = String(data.email || '').trim().toLowerCase();
@@ -558,7 +611,15 @@ async function api(req, res) {
       if (!account || !checkPassword(password, account.password)) return json(res, 401, { error: 'E-mail ou senha incorretos' });
       return json(res, 200, session(account, admin ? 'admin' : 'client'));
     }
+    /* #swagger.start
+       #swagger.path = '/api/games'
+       #swagger.method = 'post'
+       #swagger.end */
     if (req.method === 'POST' && parts[1] === 'games') { if (!need('admin')) return; const game = { id: ids(), ...cleanGame(await body(req)) }; games.push(game); await save(); return json(res, 201, game); }
+    /* #swagger.start
+       #swagger.path = '/api/games/{id}'
+       #swagger.method = 'put'
+       #swagger.end */
     if (req.method === 'PUT' && parts[1] === 'games') {
       if (!need('admin')) return;
       const index = games.findIndex(item => item.id === parts[2]);
@@ -566,6 +627,10 @@ async function api(req, res) {
       games[index] = { id: games[index].id, ...cleanGame(await body(req), games[index]) }; await save();
       return json(res, 200, games[index]);
     }
+    /* #swagger.start
+       #swagger.path = '/api/games/{id}'
+       #swagger.method = 'delete'
+       #swagger.end */
     if (req.method === 'DELETE' && parts[1] === 'games') {
       if (!need('admin')) return;
       const index = games.findIndex(item => item.id === parts[2]);
@@ -574,6 +639,10 @@ async function api(req, res) {
       games.splice(index, 1); reviews.splice(0, reviews.length, ...reviews.filter(item => item.gameId !== parts[2])); await save();
       return json(res, 200, { deleted: true });
     }
+    /* #swagger.start
+       #swagger.path = '/api/bookings'
+       #swagger.method = 'post'
+       #swagger.end */
     if (req.method === 'POST' && parts[1] === 'bookings') {
       if (!need('client')) return;
       const data = await body(req);
@@ -586,6 +655,10 @@ async function api(req, res) {
       bookings.push(booking); await save();
       return json(res, 201, booking);
     }
+    /* #swagger.start
+       #swagger.path = '/api/bookings/{id}'
+       #swagger.method = 'patch'
+       #swagger.end */
     if (req.method === 'PATCH' && parts[1] === 'bookings') {
       if (!user) return json(res, 401, { error: 'Acesso nao autorizado. Entre novamente.' });
       if (user.role === 'admin') {
@@ -607,6 +680,10 @@ async function api(req, res) {
       booking.status = 'Devolvido'; await save();
       return json(res, 200, booking);
     }
+    /* #swagger.start
+       #swagger.path = '/api/bookings/{id}'
+       #swagger.method = 'delete'
+       #swagger.end */
     if (req.method === 'DELETE' && parts[1] === 'bookings') {
       if (!need('client')) return;
       const booking = bookings.find(item => item.id === parts[2] && item.clientId === user.id);
@@ -615,10 +692,18 @@ async function api(req, res) {
       booking.status = 'Cancelado'; await save();
       return json(res, 200, booking);
     }
+    /* #swagger.start
+       #swagger.path = '/api/reviews'
+       #swagger.method = 'get'
+       #swagger.end */
     if (req.method === 'GET' && parts[1] === 'reviews') {
       if (!need('admin')) return;
       return json(res, 200, reviews.map(item => ({ ...item, client: clients.find(c => c.id === item.clientId)?.name, game: findGame(item.gameId)?.title })));
     }
+    /* #swagger.start
+       #swagger.path = '/api/reviews'
+       #swagger.method = 'post'
+       #swagger.end */
     if (req.method === 'POST' && parts[1] === 'reviews') {
       if (!need('client')) return;
       const data = await body(req);
@@ -631,6 +716,10 @@ async function api(req, res) {
       reviews.push(review); await save();
       return json(res, 201, review);
     }
+    /* #swagger.start
+       #swagger.path = '/api/ai'
+       #swagger.method = 'post'
+       #swagger.end */
     if (req.method === 'POST' && parts[1] === 'ai') {
       const data = await body(req);
       const mood = String(data.mood || '').trim().slice(0, 500);
@@ -667,6 +756,10 @@ async function api(req, res) {
         return json(res, 200, { source: 'curadoria local (OpenAI indisponível)', answer: localAnswer, games: suggestions });
       }
     }
+    /* #swagger.start
+       #swagger.path = '/api/reviews/{id}'
+       #swagger.method = 'patch'
+       #swagger.end */
     if (req.method === 'PATCH' && parts[1] === 'reviews') {
       if (!need('admin')) return;
       const item = reviews.find(review => review.id === parts[2]);
@@ -678,7 +771,20 @@ async function api(req, res) {
   } catch (error) { return json(res, 400, { error: error.message }); }
 }
 
-const server = http.createServer((req, res) => req.url.startsWith('/api/') ? api(req, res) : staticFile(req, res));
+const server = http.createServer((req, res) => {
+  if (serveDocs(req, res)) return;
+  if (!req.url.startsWith('/api/')) return staticFile(req, res);
+  let parts;
+  try { parts = new URL(req.url, `http://${req.headers.host}`).pathname.split('/').filter(Boolean); }
+  catch { return json(res, 400, { error: 'URL inválida.' }); }
+  const coverUpload = req.method === 'POST' && parts[1] === 'games' && parts[2] && parts[3] === 'cover' && parts.length === 4;
+  // Upload processa rede fora da fila e usa a fila apenas ao persistir. As
+  // demais mutações precisam aguardar para não copiar um snapshot provisório.
+  if (['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method) && !coverUpload) {
+    return withStateWrite(() => api(req, res));
+  }
+  return api(req, res);
+});
 initializeData()
   .then(() => server.listen(PORT, () => console.log(`GameVault running at http://localhost:${PORT}`)))
   .catch(error => {

@@ -4,3 +4,6 @@ data.json
 .env.*
 !.env.example
 .neon
+.npm-cache/
+.audit-tools/
+.audit-pdf/

@@ -10,9 +10,9 @@ O trabalho propõe explorar pacotes adicionais úteis para aplicações de back-
 
 **Pacote escolhido: Chart.js** — alternativa às opções Recharts e Nivo, sem utilizar Victory ou Sequelize. O dashboard administrativo do projeto é a demonstração prática do pacote.
 
-Na aba **Visão geral** do painel administrativo, o Chart.js apresenta empréstimos por jogo em gráfico de barras, quantidade de jogos por categoria em gráfico de rosca e médias das avaliações em gráfico de linhas. O primeiro gráfico inclui um controle para alternar entre barras verticais e horizontais. Os dados são carregados pela API (`GET /api/dashboard`) e usados para montar os gráficos no navegador. A integração está em `public/index.html` (carregamento da biblioteca) e `public/app.js` (configuração dos gráficos e dados).
+Na tela **Painel** do admin (`#/admin`), o Chart.js apresenta empréstimos por jogo em gráfico de barras, quantidade de jogos por categoria em gráfico de rosca e médias das avaliações em gráfico de linhas. O primeiro gráfico inclui um controle para alternar entre barras verticais e horizontais. Os dados são carregados pela API (`GET /api/dashboard`) e usados para montar os gráficos no navegador. A integração está em `public/index.html` (carregamento da biblioteca) e `public/app.js` (configuração dos gráficos e dados).
 
-Para demonstrar o exemplo, execute o projeto, entre com a conta administrativa e abra a aba **Visão geral**. A seção “O que esta implementado” descreve as demais funcionalidades da aplicação.
+Para demonstrar o exemplo, execute o projeto, entre com a conta administrativa e abra **Painel** no menu Administração. A seção “O que esta implementado” descreve as demais funcionalidades da aplicação.
 
 ### Criação de tabelas – TanStack Table
 
@@ -172,7 +172,7 @@ A descoberta de jogos usa endpoints públicos da Steam Store e não exige uma ch
 | Login e controle de acesso | `POST /api/auth`, token no header `Authorization`, papéis cliente e admin |
 | Persistência de dados | PostgreSQL (`db/schema.sql`, `db.js`) ou `data.json` local |
 | Modelo E-R | [docs/modelo-er.md](docs/modelo-er.md) |
-| Dashboard com gráficos (Chart.js) | `public/app.js`, carregamento em `public/index.html`; painel admin, aba Visão geral |
+| Dashboard com gráficos (Chart.js) | `public/app.js`, carregamento em `public/index.html`; painel admin, tela Painel |
 | Tabela interativa (TanStack Table Core) | `public/app.js`, função `initializeGamesTable()`; painel admin, aba Jogos |
 | Integração com IA | `POST /api/ai` (OpenAI ou fallback local) |
 | Deploy | `render.yaml` (backend) e `vercel.json` (frontend) |
